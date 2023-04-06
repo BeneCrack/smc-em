@@ -1,0 +1,573 @@
+//@version=5
+// This work is licensed under a Attribution-NonCommercial-ShareAlike 4.0 International (CC BY-NC-SA 4.0) https://creativecommons.org/licenses/by-nc-sa/4.0/
+// © EasyMarket
+
+indicator("Smart Money Concepts Strategy [EasyMarket]", "Smart Money Concepts Strategy [EasyMarket]"
+  , overlay = true
+  , max_labels_count = 500
+  , max_lines_count = 500
+  , max_boxes_count = 500
+  , max_bars_back = 500)
+//-----------------------------------------------------------------------------{
+//Constants
+//-----------------------------------------------------------------------------{
+color TRANSP_CSS = #ffffff00
+
+//Tooltips
+string MODE_TOOLTIP          = 'Allows to display historical Structure or only the recent ones'
+string STYLE_TOOLTIP         = 'Indicator color theme'
+string COLOR_CANDLES_TOOLTIP = 'Display additional candles with a color reflecting the current trend detected by structure'
+string SHOW_INTERNAL         = 'Display internal market structure'
+string CONFLUENCE_FILTER     = 'Filter non significant internal structure breakouts'
+string SHOW_SWING            = 'Display swing market Structure'
+string SHOW_SWING_POINTS     = 'Display swing point as labels on the chart'
+string SHOW_SWHL_POINTS      = 'Highlight most recent strong and weak high/low points on the chart'
+string INTERNAL_OB           = 'Display internal order blocks on the chart\n\nNumber of internal order blocks to display on the chart'
+string SWING_OB              = 'Display swing order blocks on the chart\n\nNumber of internal swing blocks to display on the chart'
+string FILTER_OB             = 'Method used to filter out volatile order blocks \n\nIt is recommended to use the cumulative mean range method when a low amount of data is available'
+string SHOW_EQHL             = 'Display equal highs and equal lows on the chart'
+string EQHL_BARS             = 'Number of bars used to confirm equal highs and equal lows'
+string EQHL_THRESHOLD        = 'Sensitivity threshold in a range (0, 1) used for the detection of equal highs & lows\n\nLower values will return fewer but more pertinent results'
+string SHOW_FVG              = 'Display fair values gaps on the chart'
+string AUTO_FVG              = 'Filter out non significant fair value gaps'
+string FVG_TF                = 'Fair value gaps timeframe'
+string EXTEND_FVG            = 'Determine how many bars to extend the Fair Value Gap boxes on chart'
+string PED_ZONES             = 'Display premium, discount, and equilibrium zones on chart'
+
+
+
+
+
+tf(_res, _exp, gaps_on) =>
+    gaps_on == 0 ? request.security(syminfo.tickerid, _res, _exp) : gaps_on == true ? request.security(syminfo.tickerid, _res, _exp, barmerge.gaps_on, barmerge.lookahead_off) : request.security(syminfo.tickerid, _res, _exp, barmerge.gaps_off, barmerge.lookahead_off)
+
+ha_htf = ''
+show_ha = input.bool(true, "Show HA Plot/ Market Bias", group="EM Trend")
+ha_len = input(60, 'Period', group="EM Trend")
+ha_len2 = input(10, 'Smoothing', group="EM Trend")
+
+// Calculations {
+o = ta.ema(open, ha_len)
+c = ta.ema(close, ha_len)
+h = ta.ema(high, ha_len)
+l = ta.ema(low, ha_len)
+
+haclose = tf(ha_htf, (o + h + l + c) / 4, 0)
+xhaopen = tf(ha_htf, (o + c) / 2, 0)
+haopen = na(xhaopen[1]) ? (o + c) / 2 : (xhaopen[1] + haclose[1]) / 2
+hahigh = math.max(h, math.max(haopen, haclose))
+halow = math.min(l, math.min(haopen, haclose))
+
+
+o2 = tf(ha_htf, ta.ema(haopen, ha_len2), 0)
+c2 = tf(ha_htf, ta.ema(haclose, ha_len2), 0)
+h2 = tf(ha_htf, ta.ema(hahigh, ha_len2), 0)
+l2 = tf(ha_htf, ta.ema(halow, ha_len2), 0)
+
+ha_avg = (h2 + l2) / 2
+// }
+    
+// Oscillator {
+osc_len = input.int(7, "Oscillator Period", group="EM Trend")
+
+osc_bias = 100 *(c2 - o2)
+osc_smooth = ta.ema(osc_bias, osc_len)
+
+sigcolor = 
+  (osc_bias > 0) and (osc_bias >= osc_smooth) ? color.new(color.lime, 70) : 
+  (osc_bias > 0) and (osc_bias < osc_smooth) ? color.new(color.lime, 70) : 
+  (osc_bias < 0) and (osc_bias <= osc_smooth) ? color.new(color.red, 70) : 
+  (osc_bias < 0) and (osc_bias > osc_smooth) ? color.new(color.red, 70) :
+  na
+// }
+
+// Plots {
+p_h = plot(h2, "Bias High", color=color(na), display=display.none, editable=false)
+p_l = plot(l2, "Bias Low", color=color(na), display=display.none, editable=false)
+p_avg = plot(ha_avg, "Bias Avergae", color=color(na), display=display.none, editable=false)
+
+
+fill(p_l, p_h, show_ha ? sigcolor : na)
+col = o2 > c2 ? color.red : color.lime
+// }
+
+
+
+
+//-----------------------------------------------------------------------------{
+//Settings
+//-----------------------------------------------------------------------------{
+//General
+//----------------------------------------{
+mode = input.string('Historical'
+  , options = ['Historical', 'Present']
+  , group = 'Smart Money Concepts'
+  , tooltip = MODE_TOOLTIP)
+
+style = input.string('Colored'
+  , options = ['Colored', 'Monochrome']
+  , group = 'Smart Money Concepts'
+  , tooltip = STYLE_TOOLTIP)
+
+show_trend = input(false, 'Color Candles'
+  , group = 'Smart Money Concepts'
+  , tooltip = COLOR_CANDLES_TOOLTIP)
+
+//----------------------------------------}
+//Internal Structure
+//----------------------------------------{
+show_internals = input(true, 'Show Internal Structure'
+  , group = 'Real Time Internal Structure'
+  , tooltip = SHOW_INTERNAL)
+
+show_ibull = input.string('All', 'Bullish Structure'
+  , options = ['All', 'BOS', 'CHoCH']
+  , inline = 'ibull'
+  , group = 'Real Time Internal Structure')
+
+swing_ibull_css = input(#089981, ''
+  , inline = 'ibull'
+  , group = 'Real Time Internal Structure')
+
+//Bear Structure
+show_ibear = input.string('All', 'Bearish Structure'
+  , options = ['All', 'BOS', 'CHoCH']
+  , inline = 'ibear'
+  , group = 'Real Time Internal Structure')
+
+swing_ibear_css = input(#f23645, ''
+  , inline = 'ibear'
+  , group = 'Real Time Internal Structure')
+
+ifilter_confluence = input(false, 'Confluence Filter'
+  , group = 'Real Time Internal Structure'
+  , tooltip = CONFLUENCE_FILTER)
+
+internal_structure_size = input.string('Tiny', 'Internal Label Size'
+  , options = ['Tiny', 'Small', 'Normal']
+  , group = 'Real Time Internal Structure')
+
+//----------------------------------------}
+//Swing Structure
+//----------------------------------------{
+show_Structure = input(false, 'Show Swing Structure'
+  , group = 'Real Time Swing Structure'
+  , tooltip = SHOW_SWING)
+
+//Bull Structure
+show_bull = input.string('All', 'Bullish Structure'
+  , options = ['All', 'BOS', 'CHoCH']
+  , inline = 'bull'
+  , group = 'Real Time Swing Structure')
+
+swing_bull_css = input(#089981, ''
+  , inline = 'bull'
+  , group = 'Real Time Swing Structure')
+
+//Bear Structure
+show_bear = input.string('All', 'Bearish Structure'
+  , options = ['All', 'BOS', 'CHoCH']
+  , inline = 'bear'
+  , group = 'Real Time Swing Structure')
+
+swing_bear_css = input(#f23645, ''
+  , inline = 'bear'
+  , group = 'Real Time Swing Structure')
+
+swing_structure_size = input.string('Small', 'Swing Label Size'
+  , options = ['Tiny', 'Small', 'Normal']
+  , group = 'Real Time Swing Structure')
+
+//Swings
+show_swings = input(false, 'Show Swings Points'
+  , inline = 'swings'
+  , group = 'Real Time Swing Structure'
+  , tooltip = SHOW_SWING_POINTS)
+
+length = input.int(50, ''
+  , minval = 10
+  , inline = 'swings'
+  , group = 'Real Time Swing Structure')
+
+show_hl_swings = input(true, 'Show Strong/Weak High/Low'
+  , group = 'Real Time Swing Structure'
+  , tooltip = SHOW_SWHL_POINTS)
+
+//-----------------------------------------------------------------------------}
+//Functions
+//-----------------------------------------------------------------------------{
+n = bar_index
+
+atr = ta.atr(200)
+cmean_range = ta.cum(high - low) / n
+
+//HL Output function
+hl() => [high, low]
+
+//Get ohlc values function
+get_ohlc()=> [close[1], open[1], high, low, high[2], low[2]]
+
+//Display Structure function
+display_Structure(x, y, txt, css, dashed, down, lbl_size)=>
+    structure_line = line.new(x, y, n, y
+      , color = css
+      , style = dashed ? line.style_dashed : line.style_solid)
+
+    structure_lbl = label.new(int(math.avg(x, n)), y, txt
+      , color = TRANSP_CSS
+      , textcolor = css
+      , style = down ? label.style_label_down : label.style_label_up
+      , size = lbl_size)
+
+    if mode == 'Present'
+        line.delete(structure_line[1])
+        label.delete(structure_lbl[1])
+
+//Swings detection/measurements
+swings(len)=>
+    var os = 0
+    
+    upper = ta.highest(len)
+    lower = ta.lowest(len)
+
+    os := high[len] > upper ? 0 : low[len] < lower ? 1 : os[1]
+
+    top = os == 0 and os[1] != 0 ? high[len] : 0
+    btm = os == 1 and os[1] != 1 ? low[len] : 0
+
+    [top, btm]
+
+
+        
+//Line Style function
+get_line_style(style) =>
+    out = switch style
+        '⎯⎯⎯'  => line.style_solid
+        '----' => line.style_dashed
+        '····' => line.style_dotted
+
+//-----------------------------------------------------------------------------}
+//Global variables
+//-----------------------------------------------------------------------------{
+var trend = 0, var itrend = 0
+
+var top_y = 0., var top_x = 0
+var btm_y = 0., var btm_x = 0
+
+var itop_y = 0., var itop_x = 0
+var ibtm_y = 0., var ibtm_x = 0
+
+var trail_up = high, var trail_dn = low
+var trail_up_x = 0,  var trail_dn_x = 0
+
+var top_cross = true,  var btm_cross = true
+var itop_cross = true, var ibtm_cross = true
+
+var txt_top = '',  var txt_btm = ''
+
+//Alerts
+bull_choch_alert = false 
+bull_bos_alert   = false 
+
+bear_choch_alert = false 
+bear_bos_alert   = false 
+
+bull_ichoch_alert = false 
+bull_ibos_alert   = false 
+
+bear_ichoch_alert = false 
+bear_ibos_alert   = false 
+
+bull_iob_break = false 
+bear_iob_break = false
+
+bull_ob_break = false 
+bear_ob_break = false
+
+eqh_alert = false 
+eql_alert = false 
+
+//Structure colors
+var bull_css = style == 'Monochrome' ? #b2b5be 
+  : swing_bull_css
+
+var bear_css = style == 'Monochrome' ? #b2b5be 
+  : swing_bear_css
+
+var ibull_css = style == 'Monochrome' ? #b2b5be 
+  : swing_ibull_css
+
+var ibear_css = style == 'Monochrome' ? #b2b5be 
+  : swing_ibear_css
+
+//Labels size
+var internal_structure_lbl_size = internal_structure_size == 'Tiny' 
+  ? size.tiny 
+  : internal_structure_size == 'Small' 
+  ? size.small 
+  : size.normal 
+
+var swing_structure_lbl_size = swing_structure_size == 'Tiny' 
+  ? size.tiny 
+  : swing_structure_size == 'Small' 
+  ? size.small 
+  : size.normal 
+
+//Swings
+[top, btm] = swings(length)
+
+[itop, ibtm] = swings(5)
+
+//-----------------------------------------------------------------------------}
+//Pivot High
+//-----------------------------------------------------------------------------{
+var line extend_top = na
+
+var label extend_top_lbl = label.new(na, na
+  , color = TRANSP_CSS
+  , textcolor = bear_css
+  , style = label.style_label_down
+  , size = size.tiny)
+
+if top
+    top_cross := true
+    txt_top := top > top_y ? 'HH' : 'LH'
+
+    if show_swings
+        top_lbl = label.new(n-length, top, txt_top
+          , color = TRANSP_CSS
+          , textcolor = bear_css
+          , style = label.style_label_down
+          , size = swing_structure_lbl_size)
+
+        if mode == 'Present'
+            label.delete(top_lbl[1])
+
+    //Extend recent top to last bar
+    line.delete(extend_top[1])
+    extend_top := line.new(n-length, top, n, top
+      , color = bear_css)
+
+    top_y := top
+    top_x := n - length
+
+    trail_up := top
+    trail_up_x := n - length
+
+if itop
+    itop_cross := true
+
+    itop_y := itop
+    itop_x := n - 5
+
+//Trailing maximum
+trail_up := math.max(high, trail_up)
+trail_up_x := trail_up == high ? n : trail_up_x
+
+//Set top extension label/line
+if barstate.islast and show_hl_swings
+    line.set_xy1(extend_top, trail_up_x, trail_up)
+    line.set_xy2(extend_top, n + 20, trail_up)
+
+    label.set_x(extend_top_lbl, n + 20)
+    label.set_y(extend_top_lbl, trail_up)
+    label.set_text(extend_top_lbl, trend < 0 ? 'Strong High' : 'Weak High')
+
+//-----------------------------------------------------------------------------}
+//Pivot Low
+//-----------------------------------------------------------------------------{
+var line extend_btm = na 
+
+var label extend_btm_lbl = label.new(na, na
+  , color = TRANSP_CSS
+  , textcolor = bull_css
+  , style = label.style_label_up
+  , size = size.tiny)
+
+if btm
+    btm_cross := true
+    txt_btm := btm < btm_y ? 'LL' : 'HL'
+    
+    if show_swings
+        btm_lbl = label.new(n - length, btm, txt_btm
+          , color = TRANSP_CSS
+          , textcolor = bull_css
+          , style = label.style_label_up
+          , size = swing_structure_lbl_size)
+
+        if mode == 'Present'
+            label.delete(btm_lbl[1])
+    
+    //Extend recent btm to last bar
+    line.delete(extend_btm[1])
+    extend_btm := line.new(n - length, btm, n, btm
+      , color = bull_css)
+
+    btm_y := btm
+    btm_x := n-length
+
+    trail_dn := btm
+    trail_dn_x := n-length
+
+if ibtm
+    ibtm_cross := true
+
+    ibtm_y := ibtm
+    ibtm_x := n - 5
+
+//Trailing minimum
+trail_dn := math.min(low, trail_dn)
+trail_dn_x := trail_dn == low ? n : trail_dn_x
+
+//Set btm extension label/line
+if barstate.islast and show_hl_swings
+    line.set_xy1(extend_btm, trail_dn_x, trail_dn)
+    line.set_xy2(extend_btm, n + 20, trail_dn)
+
+    label.set_x(extend_btm_lbl, n + 20)
+    label.set_y(extend_btm_lbl, trail_dn)
+    label.set_text(extend_btm_lbl, trend > 0 ? 'Strong Low' : 'Weak Low')
+
+//-----------------------------------------------------------------------------}
+//Order Blocks Arrays
+//-----------------------------------------------------------------------------{
+var iob_top = array.new_float(0)
+var iob_btm = array.new_float(0)
+var iob_left = array.new_int(0)
+var iob_type = array.new_int(0)
+
+var ob_top = array.new_float(0)
+var ob_btm = array.new_float(0)
+var ob_left = array.new_int(0)
+var ob_type = array.new_int(0)
+
+//-----------------------------------------------------------------------------}
+//Pivot High BOS/CHoCH
+//-----------------------------------------------------------------------------{
+//Filtering
+var bull_concordant = true
+
+if ifilter_confluence
+    bull_concordant := high - math.max(close, open) > math.min(close, open - low)
+
+//Detect internal bullish Structure
+if ta.crossover(close, itop_y) and itop_cross and top_y != itop_y and bull_concordant
+    bool choch = na
+    
+    if itrend < 0
+        choch := true
+        bull_ichoch_alert := true
+    else 
+        bull_ibos_alert := true
+    
+    txt = choch ? 'CHoCH' : 'BOS'
+
+    if show_internals
+        if show_ibull == 'All' or (show_ibull == 'BOS' and not choch) or (show_ibull == 'CHoCH' and choch)
+            display_Structure(itop_x, itop_y, txt, ibull_css, true, true, internal_structure_lbl_size)
+    
+    itop_cross := false
+    itrend := 1
+
+//Detect bullish Structure
+if ta.crossover(close, top_y) and top_cross
+    bool choch = na
+    
+    if trend < 0
+        choch := true
+        bull_choch_alert := true
+    else 
+        bull_bos_alert := true
+
+    txt = choch ? 'CHoCH' : 'BOS'
+    
+    if show_Structure
+        if show_bull == 'All' or (show_bull == 'BOS' and not choch) or (show_bull == 'CHoCH' and choch)
+            display_Structure(top_x, top_y, txt, bull_css, false, true, swing_structure_lbl_size)
+    
+
+    top_cross := false
+    trend := 1
+
+//-----------------------------------------------------------------------------}
+//Pivot Low BOS/CHoCH
+//-----------------------------------------------------------------------------{
+var bear_concordant = true
+
+if ifilter_confluence
+    bear_concordant := high - math.max(close, open) < math.min(close, open - low)
+
+//Detect internal bearish Structure
+if ta.crossunder(close, ibtm_y) and ibtm_cross and btm_y != ibtm_y and bear_concordant
+    bool choch = false
+    
+    if itrend > 0
+        choch := true
+        bear_ichoch_alert := true
+    else 
+        bear_ibos_alert := true
+    
+    txt = choch ? 'CHoCH' : 'BOS'
+
+    if show_internals
+        if show_ibear == 'All' or (show_ibear == 'BOS' and not choch) or (show_ibear == 'CHoCH' and choch)
+            display_Structure(ibtm_x, ibtm_y, txt, ibear_css, true, false, internal_structure_lbl_size)
+    
+    ibtm_cross := false
+    itrend := -1
+
+//Detect bearish Structure
+if ta.crossunder(close, btm_y) and btm_cross
+    bool choch = na
+    
+    if trend > 0
+        choch := true
+        bear_choch_alert := true
+    else 
+        bear_bos_alert := true
+
+    txt = choch ? 'CHoCH' : 'BOS'
+    
+    if show_Structure
+        if show_bear == 'All' or (show_bear == 'BOS' and not choch) or (show_bear == 'CHoCH' and choch)
+            display_Structure(btm_x, btm_y, txt, bear_css, false, false, swing_structure_lbl_size)
+
+    btm_cross := false
+    trend := -1
+
+
+//-----------------------------------------------------------------------------}
+//Trend
+//-----------------------------------------------------------------------------{
+var color trend_css = na
+
+if show_trend
+    if style == 'Colored'
+        trend_css := itrend == 1 ? bull_css : bear_css
+    else if style == 'Monochrome'
+        trend_css := itrend == 1 ? #b2b5be : #5d606b
+
+plotcandle(open, high, low, close
+  , color = trend_css
+  , wickcolor = trend_css
+  , bordercolor = trend_css
+  , editable = false)
+
+//-----------------------------------------------------------------------------}
+//Alerts
+//-----------------------------------------------------------------------------{
+//Internal Structure
+alertcondition(bull_ibos_alert, 'Internal Bullish BOS', 'Internal Bullish BOS formed')
+alertcondition(bull_ichoch_alert, 'Internal Bullish CHoCH', 'Internal Bullish CHoCH formed')
+
+alertcondition(bear_ibos_alert, 'Internal Bearish BOS', 'Internal Bearish BOS formed')
+alertcondition(bear_ichoch_alert, 'Internal Bearish CHoCH', 'Internal Bearish CHoCH formed')
+
+//Swing Structure
+alertcondition(bull_bos_alert, 'Bullish BOS', 'Internal Bullish BOS formed')
+alertcondition(bull_choch_alert, 'Bullish CHoCH', 'Internal Bullish CHoCH formed')
+
+alertcondition(bear_bos_alert, 'Bearish BOS', 'Bearish BOS formed')
+alertcondition(bear_choch_alert, 'Bearish CHoCH', 'Bearish CHoCH formed')
+
+//-----------------------------------------------------------------------------}
